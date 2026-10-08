@@ -7,15 +7,17 @@ import {
   BookOpen, 
   Info, 
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Server
 } from 'lucide-react';
 
 interface NavbarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
+  onOpenApiConfig?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate, onOpenApiConfig }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
@@ -92,7 +94,19 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
           </div>
 
           {/* Action CTA */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2.5">
+            {onOpenApiConfig && (
+              <button
+                type="button"
+                onClick={onOpenApiConfig}
+                title="Configure Backend API Server"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-800 transition-colors"
+              >
+                <Server className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Backend</span>
+              </button>
+            )}
+
             <button
               onClick={() => handleNavClick('forecast')}
               className="relative group inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 via-indigo-500 to-sky-500 hover:from-indigo-500 hover:to-sky-400 shadow-md shadow-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/40 transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
@@ -151,7 +165,20 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
             );
           })}
           
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
+            {onOpenApiConfig && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenApiConfig();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 bg-slate-900 border border-slate-800"
+              >
+                <Server className="w-4 h-4 text-indigo-400" />
+                <span>Backend API Settings</span>
+              </button>
+            )}
             <button
               onClick={() => handleNavClick('forecast')}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-base font-semibold text-white bg-gradient-to-r from-indigo-600 to-sky-500 shadow-lg shadow-indigo-600/20"

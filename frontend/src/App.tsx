@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
+import { ApiConfigModal } from './components/ApiConfigModal';
 import { Home } from './pages/Home';
 import { Forecast } from './pages/Forecast';
 import { Analysis } from './pages/Analysis';
@@ -14,6 +15,7 @@ export function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
   const [activeDataset, setActiveDataset] = useState<UploadResponse | null>(null);
   const [loadingDemo, setLoadingDemo] = useState(false);
+  const [isApiConfigOpen, setIsApiConfigOpen] = useState(false);
 
   // Sync with browser URL / hash for direct linking
   useEffect(() => {
@@ -64,7 +66,11 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
-      <Navbar currentPage={currentPage} onNavigate={navigateTo} />
+      <Navbar 
+        currentPage={currentPage} 
+        onNavigate={navigateTo} 
+        onOpenApiConfig={() => setIsApiConfigOpen(true)}
+      />
 
       <main className="flex-1">
         {currentPage === 'home' && (
@@ -79,6 +85,7 @@ export function App() {
           <Forecast
             initialDataset={activeDataset}
             onClearInitialDataset={() => setActiveDataset(null)}
+            onOpenApiConfig={() => setIsApiConfigOpen(true)}
           />
         )}
 
@@ -102,6 +109,11 @@ export function App() {
       </main>
 
       <Footer onNavigate={navigateTo} />
+
+      <ApiConfigModal 
+        isOpen={isApiConfigOpen} 
+        onClose={() => setIsApiConfigOpen(false)} 
+      />
     </div>
   );
 }

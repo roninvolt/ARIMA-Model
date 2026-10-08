@@ -22,7 +22,8 @@ app = FastAPI(
     title="ForecastAI — ARIMA Time-Series Intelligence Engine",
     description="Statistical time-series forecasting, automated ARIMA parameter selection, validation, and analytics.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 # CORS configuration
@@ -39,12 +40,21 @@ app.include_router(router, prefix="/api")
 app.include_router(router)
 
 @app.get("/")
+@app.get("/api")
 def root():
     return {
         "name": "ForecastAI API",
         "description": "Intelligent Time-Series Forecasting with ARIMA",
         "docs": "/docs",
         "status": "online"
+    }
+
+@app.get("/health")
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "ok",
+        "service": "ForecastAI Backend"
     }
 
 if __name__ == "__main__":

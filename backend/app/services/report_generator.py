@@ -1,22 +1,33 @@
 import io
 import os
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, List
 
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether, PageBreak
-)
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.pdfgen import canvas
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
 
-class NumberedCanvas(canvas.Canvas):
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether, PageBreak
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfgen import canvas
+    HAS_REPORTLAB = True
+    CanvasBase = canvas.Canvas
+except ImportError:
+    HAS_REPORTLAB = False
+    CanvasBase = object
+
+class NumberedCanvas(CanvasBase):
     def __init__(self, *args, **kwargs):
         super(NumberedCanvas, self).__init__(*args, **kwargs)
         self._saved_page_states = []
@@ -123,6 +134,8 @@ def generate_pdf_report(
     historical_points: List[Dict[str, Any]],
     diagnostics: Dict[str, Any]
 ) -> bytes:
+    if not HAS_REPORTLAB or not HAS_MATPLOTLIB:
+        raise RuntimeError("PDF export requires 'reportlab' and 'matplotlib'. Use CSV export instead or install these libraries.")
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,

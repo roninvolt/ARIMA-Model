@@ -1,17 +1,20 @@
 import React from 'react';
-import { AlertCircle, X, RefreshCw } from 'lucide-react';
+import { AlertCircle, X, RefreshCw, Settings } from 'lucide-react';
 
 interface ErrorAlertProps {
   message: string;
   onDismiss?: () => void;
   onRetry?: () => void;
+  onConfigureApi?: () => void;
 }
 
-export const ErrorAlert: React.FC<ErrorAlertProps> = ({ message, onDismiss, onRetry }) => {
+export const ErrorAlert: React.FC<ErrorAlertProps> = ({ message, onDismiss, onRetry, onConfigureApi }) => {
   if (!message) return null;
 
+  const isApiIssue = message.includes('405') || message.includes('backend') || message.includes('API') || message.includes('404');
+
   return (
-    <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 flex items-start justify-between gap-3 text-rose-200 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3 text-rose-200 backdrop-blur-md animate-in fade-in duration-200">
       <div className="flex items-start gap-3">
         <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
@@ -20,7 +23,17 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ message, onDismiss, onRe
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
+        {isApiIssue && onConfigureApi && (
+          <button
+            type="button"
+            onClick={onConfigureApi}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Backend Settings
+          </button>
+        )}
         {onRetry && (
           <button
             type="button"

@@ -53,11 +53,13 @@ import { ErrorAlert } from '../components/ErrorAlert';
 interface ForecastProps {
   initialDataset?: UploadResponse | null;
   onClearInitialDataset?: () => void;
+  onOpenApiConfig?: () => void;
 }
 
 export const Forecast: React.FC<ForecastProps> = ({ 
   initialDataset, 
-  onClearInitialDataset 
+  onClearInitialDataset,
+  onOpenApiConfig
 }) => {
   // Stepper state (1 to 6)
   const [currentStep, setCurrentStep] = useState(1);
@@ -368,6 +370,7 @@ export const Forecast: React.FC<ForecastProps> = ({
         <ErrorAlert 
           message={errorMessage} 
           onDismiss={() => setErrorMessage('')} 
+          onConfigureApi={onOpenApiConfig}
         />
       )}
 
