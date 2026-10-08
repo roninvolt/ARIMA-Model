@@ -4,10 +4,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.models.database import init_db
 from app.api.routes import router
 
+try:
+    init_db()
+except Exception:
+    pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize SQLite tables on startup
-    init_db()
+    try:
+        init_db()
+    except Exception:
+        pass
     yield
 
 app = FastAPI(
@@ -26,7 +34,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API endpoints
+# Include API endpoints (mounted under /api and root fallback for reverse proxies/serverless)
+app.include_router(router, prefix="/api")
 app.include_router(router)
 
 @app.get("/")

@@ -2,6 +2,7 @@ import os
 import io
 import json
 import uuid
+import tempfile
 import numpy as np
 import pandas as pd
 from typing import List, Optional
@@ -43,11 +44,32 @@ from app.services.arima_service import (
 )
 from app.services.report_generator import generate_pdf_report
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
-UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data"))
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Handle serverless / read-only environment gracefully
+IS_SERVERLESS = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+if IS_SERVERLESS:
+    UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "forecastai_uploads")
+else:
+    UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception:
+    pass
+
+def find_data_file(filename: str) -> Optional[str]:
+    candidates = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", filename)),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", filename)),
+        os.path.abspath(os.path.join(os.getcwd(), "data", filename)),
+        os.path.abspath(os.path.join(os.getcwd(), "..", "data", filename)),
+        os.path.join("/data", filename),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
 
 SAMPLE_CATALOG = {
     "sales": {
@@ -112,21 +134,26 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
 
     date_col, target_col, quality_check = inspect_dataset(df)
 
-    # Save to disk
+    # Store CSV text string directly in database record for stateless / serverless resilience
+    csv_str = df.to_csv(index=False)
     dataset_id = str(uuid.uuid4())
     safe_filename = f"{dataset_id}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
-    df.to_csv(file_path, index=False)
+    try:
+        df.to_csv(file_path, index=False)
+    except Exception:
+        file_path = ""
 
-    # Convert preview (first 10 rows)
-    preview_df = df.head(10).fillna("")
-    preview = preview_df.to_dict(orient="records")
+    # Convert preview safely replacing any NaN or inf
+    preview_df = df.head(10).replace([np.inf, -np.inf], np.nan).fillna("")
+    preview = json.loads(preview_df.to_json(orient="records"))
 
     # Save to database
     db_dataset = DatasetModel(
         id=dataset_id,
         filename=file.filename,
         file_path=file_path,
+        csv_content=csv_str,
         row_count=len(df),
         columns_json=json.dumps(list(df.columns)),
         detected_date_col=date_col,
@@ -162,28 +189,30 @@ def load_sample_dataset(key: str, db: Session = Depends(get_db)):
 
 def load_sample_by_key(key: str, db: Session) -> UploadResponse:
     info = SAMPLE_CATALOG[key]
-    sample_path = os.path.join(DATA_DIR, info["filename"])
-    if not os.path.exists(sample_path):
-        # Fallback path check
-        sample_path = os.path.join(os.getcwd(), "data", info["filename"])
-
-    if not os.path.exists(sample_path):
-        raise HTTPException(status_code=404, detail="Demo dataset file not found on server.")
+    sample_path = find_data_file(info["filename"])
+    if not sample_path or not os.path.exists(sample_path):
+        raise HTTPException(status_code=404, detail=f"Demo dataset file '{info['filename']}' not found on server.")
 
     df = pd.read_csv(sample_path)
     date_col, target_col, quality_check = inspect_dataset(df)
 
+    csv_str = df.to_csv(index=False)
     dataset_id = str(uuid.uuid4())
     safe_filename = f"demo_{key}_{dataset_id}.csv"
     dest_path = os.path.join(UPLOAD_DIR, safe_filename)
-    df.to_csv(dest_path, index=False)
+    try:
+        df.to_csv(dest_path, index=False)
+    except Exception:
+        dest_path = ""
 
-    preview = df.head(10).fillna("").to_dict(orient="records")
+    preview_df = df.head(10).replace([np.inf, -np.inf], np.nan).fillna("")
+    preview = json.loads(preview_df.to_json(orient="records"))
 
     db_dataset = DatasetModel(
         id=dataset_id,
         filename=info["filename"],
         file_path=dest_path,
+        csv_content=csv_str,
         row_count=len(df),
         columns_json=json.dumps(list(df.columns)),
         detected_date_col=info["date_col"] or date_col,
@@ -211,7 +240,11 @@ def analyze_series(req: AnalyzeRequest, db: Session = Depends(get_db)):
 
     try:
         series, freq_desc = load_and_preprocess_series(
-            dataset.file_path, req.date_column, req.target_column, req.fill_missing or "forward_fill"
+            file_path=dataset.file_path,
+            date_col=req.date_column,
+            target_col=req.target_column,
+            fill_missing=req.fill_missing or "forward_fill",
+            csv_content=dataset.csv_content
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to prepare time series: {str(e)}")
@@ -257,7 +290,12 @@ def check_stationarity(req: StationarityRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dataset not found.")
 
     try:
-        series, _ = load_and_preprocess_series(dataset.file_path, req.date_column, req.target_column)
+        series, _ = load_and_preprocess_series(
+            file_path=dataset.file_path,
+            date_col=req.date_column,
+            target_col=req.target_column,
+            csv_content=dataset.csv_content
+        )
         res = test_stationarity(series, differencing=req.differencing or 0)
         return StationarityResponse(**res)
     except Exception as e:
@@ -270,7 +308,12 @@ def select_model(req: AutoArimaRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dataset not found.")
 
     try:
-        series, _ = load_and_preprocess_series(dataset.file_path, req.date_column, req.target_column)
+        series, _ = load_and_preprocess_series(
+            file_path=dataset.file_path,
+            date_col=req.date_column,
+            target_col=req.target_column,
+            csv_content=dataset.csv_content
+        )
         res = select_auto_arima(
             series,
             max_p=req.max_p or 4,
@@ -288,7 +331,12 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dataset not found.")
 
     try:
-        series, _ = load_and_preprocess_series(dataset.file_path, req.date_column, req.target_column)
+        series, _ = load_and_preprocess_series(
+            file_path=dataset.file_path,
+            date_col=req.date_column,
+            target_col=req.target_column,
+            csv_content=dataset.csv_content
+        )
         res = train_and_evaluate(
             series,
             p=req.p,
@@ -310,7 +358,12 @@ def run_forecast(req: ForecastRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dataset not found.")
 
     try:
-        series, freq_desc = load_and_preprocess_series(dataset.file_path, req.date_column, req.target_column)
+        series, freq_desc = load_and_preprocess_series(
+            file_path=dataset.file_path,
+            date_col=req.date_column,
+            target_col=req.target_column,
+            csv_content=dataset.csv_content
+        )
         fc_res = generate_forecast(
             series,
             p=req.p,
@@ -321,7 +374,6 @@ def run_forecast(req: ForecastRequest, db: Session = Depends(get_db)):
             freq_desc=freq_desc
         )
 
-        # Also get quick train metrics on holdout test set to store in result
         metrics_dict = None
         try:
             train_eval = train_and_evaluate(series, p=req.p, d=req.d, q=req.q, test_size_ratio=0.2)
@@ -341,7 +393,6 @@ def run_forecast(req: ForecastRequest, db: Session = Depends(get_db)):
             "freq_desc": freq_desc,
         }
 
-        # Save to SQLite database
         forecast_run = ForecastRunModel(
             id=run_id,
             dataset_id=dataset.id,
@@ -387,7 +438,12 @@ def get_diagnostics(req: DiagnosticsRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dataset not found.")
 
     try:
-        series, _ = load_and_preprocess_series(dataset.file_path, req.date_column, req.target_column)
+        series, _ = load_and_preprocess_series(
+            file_path=dataset.file_path,
+            date_col=req.date_column,
+            target_col=req.target_column,
+            csv_content=dataset.csv_content
+        )
         diag = compute_diagnostics(series, p=req.p, d=req.d, q=req.q)
         return DiagnosticsResponse(**diag)
     except Exception as e:
@@ -427,7 +483,6 @@ def export_csv(run_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No forecast table data found for this run.")
 
     df_export = pd.DataFrame(table)
-    # Rename columns nicely
     df_export.columns = ["Date", "Predicted_Value", "Lower_Bound_95", "Upper_Bound_95"]
     
     stream = io.StringIO()
@@ -456,14 +511,17 @@ def export_pdf(run_id: str, db: Session = Depends(get_db)):
     combined_data = res_data.get("combined_chart_data", [])
     freq_desc = res_data.get("freq_desc", "Daily")
 
-    # Extract historical points
     historical_points = [
         {"date": pt["date"], "value": pt["actual"]}
         for pt in combined_data if pt.get("actual") is not None
     ]
 
-    # Preprocess series to get stationarity & diagnostics
-    series, _ = load_and_preprocess_series(dataset.file_path, run.date_column, run.target_column)
+    series, _ = load_and_preprocess_series(
+        file_path=dataset.file_path,
+        date_col=run.date_column,
+        target_col=run.target_column,
+        csv_content=dataset.csv_content
+    )
     stationarity_info = test_stationarity(series, differencing=0)
     diagnostics_info = compute_diagnostics(series, run.p, run.d, run.q)
 

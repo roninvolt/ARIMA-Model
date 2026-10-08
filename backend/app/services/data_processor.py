@@ -124,12 +124,20 @@ def inspect_dataset(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Dic
 
     return date_col, target_col, quality_check
 
-def load_and_preprocess_series(file_path: str, date_col: str, target_col: str, fill_missing: str = "forward_fill") -> Tuple[pd.Series, str]:
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
+def load_and_preprocess_series(
+    file_path: Optional[str] = None,
+    date_col: str = "",
+    target_col: str = "",
+    fill_missing: str = "forward_fill",
+    csv_content: Optional[str] = None
+) -> Tuple[pd.Series, str]:
+    if csv_content:
+        df = pd.read_csv(io.StringIO(csv_content))
+    elif file_path and os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+    else:
+        raise FileNotFoundError(f"File not found and no in-memory CSV content was available: {file_path}")
 
-    # Read CSV
-    df = pd.read_csv(file_path)
     if date_col not in df.columns:
         raise ValueError(f"Date column '{date_col}' not found in dataset columns: {list(df.columns)}")
     if target_col not in df.columns:

@@ -1,10 +1,19 @@
+import os
+import tempfile
 from datetime import datetime
 import json
 import uuid
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, create_engine
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-DATABASE_URL = "sqlite:///./forecast_ai.db"
+# Detect serverless read-only filesystem environment
+IS_SERVERLESS = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+if IS_SERVERLESS:
+    db_file = os.path.join(tempfile.gettempdir(), "forecast_ai.db")
+    DATABASE_URL = f"sqlite:///{db_file}"
+else:
+    DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./forecast_ai.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -16,7 +25,8 @@ class DatasetModel(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     filename = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=False)
+    file_path = Column(String(500), nullable=True)
+    csv_content = Column(Text, nullable=True)
     row_count = Column(Integer, default=0)
     columns_json = Column(Text, default="[]")
     detected_date_col = Column(String(100), nullable=True)
@@ -61,10 +71,38 @@ class ForecastRunModel(Base):
         except Exception:
             return {}
 
+_db_initialized = False
+
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    global _db_initialized
+    try:
+        Base.metadata.create_all(bind=engine)
+        # Automatic schema migration for existing SQLite databases
+        with engine.begin() as conn:
+            try:
+                result = conn.execute(text("PRAGMA table_info(datasets)")).fetchall()
+                col_names = [row[1] for row in result]
+                if "csv_content" not in col_names:
+                    conn.execute(text("ALTER TABLE datasets ADD COLUMN csv_content TEXT"))
+            except Exception:
+                pass
+        _db_initialized = True
+    except Exception as e:
+        print(f"init_db notice: {e}")
+
+# Pre-initialize tables on module load
+try:
+    init_db()
+except Exception:
+    pass
 
 def get_db():
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+        except Exception:
+            pass
     db = SessionLocal()
     try:
         yield db

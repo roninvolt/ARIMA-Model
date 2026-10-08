@@ -24,9 +24,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let errorMsg = `Server error (${res.status})`;
     try {
-      const errorData = await res.json();
-      if (errorData.detail) {
-        errorMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const errorData = await res.json();
+        if (errorData.detail) {
+          errorMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+        }
+      } else {
+        const text = await res.text();
+        if (text && text.length < 300) {
+          errorMsg = text;
+        } else if (res.status === 404) {
+          errorMsg = `API endpoint not found (404). Ensure backend server is running and VITE_API_URL is configured.`;
+        }
       }
     } catch {
       // ignore parse error
