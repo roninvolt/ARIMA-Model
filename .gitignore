@@ -1,0 +1,47 @@
+# Node dependencies
+node_modules/
+frontend/node_modules/
+.pnpm-store/
+
+# Production build
+dist/
+frontend/dist/
+
+# Python cache & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+ENV/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/**/__pycache__/
+
+# Database & Uploads
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
+backend/forecast_ai.db
+backend/uploads/
+uploads/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+Thumbs.db
